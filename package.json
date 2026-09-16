@@ -1,0 +1,18 @@
+{
+  "name": "qwts-agent-docs-gov",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Documentation-governance gate (docs-gov) and evaluation loop (docs-eval) for the qwts fleet",
+  "engines": {
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
+  },
+  "scripts": {
+    "docs:gov": "node tools/docs-gov/docs-gov.mjs",
+    "docs:eval": "node tools/docs-eval/run.mjs",
+    "lint:markdown": "markdownlint docs/ AGENTS.md README.md",
+    "test": "node --test tools/docs-gov/tests/docs-gov.test.mjs tools/docs-eval/tests/docs-eval.test.mjs"
+  },
+  "devDependencies": {
+    "markdownlint-cli": "^0.49.1"
+  }
+}

@@ -1,0 +1,100 @@
+# Reusable documentation-governance gate (ENG-0009, qwts/agent-sop#2).
+#
+# Consumers call this per ENG-0004's delivery model, pinned to a commit:
+#
+#   jobs:
+#     docs-gov:
+#       uses: qwts/qwts-agent-docs-gov/.github/workflows/docs-governance.yml@<40-hex sha>
+#       with:
+#         tooling-ref: <the same 40-hex sha>
+#
+# The caller repo provides its own docs-gov.config.json; the check
+# implementation is fetched from this repo at `tooling-ref`. A called workflow
+# cannot read its own commit from the github context (that context is the
+# caller's; the reusable workflow's commit exists only as the job_workflow_sha
+# OIDC claim), so the consumer passes its pinned SHA twice and the job fails
+# closed when tooling-ref is empty rather than drifting to the default branch.
+# The current pin is recorded in qwts/qwts-agent-org's org.json (`docs-gov`
+# capability). The CLI is zero-dependency — no npm install happens anywhere in
+# this job.
+name: Docs governance
+
+on:
+  workflow_call:
+    inputs:
+      config:
+        description: Path to the caller's docs-gov config
+        type: string
+        default: docs-gov.config.json
+      tooling-ref:
+        description: Ref of qwts/qwts-agent-docs-gov to take the checks from — pass the same 40-hex SHA as in the `uses:` line. Empty (the default) fails the job unless use-local-tooling is set.
+        type: string
+        default: ''
+      runs-on:
+        description: JSON array of runner labels for the job. The default is the hosted runner.
+        type: string
+        default: '["ubuntu-latest"]'
+      use-local-tooling:
+        description: Run the checks from the caller's own checkout (this repository's self-test; exercises the tooling in a change before any consumer pins it)
+        type: boolean
+        default: false
+
+jobs:
+  docs-gov:
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    timeout-minutes: 15
+    steps:
+      - name: Check out caller repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Require a tooling ref
+        if: ${{ !inputs.use-local-tooling }}
+        env:
+          TOOLING_REF: ${{ inputs.tooling-ref }}
+        run: |
+          # An empty ref would make actions/checkout silently fall back to the
+          # default branch — the drift the pin exists to prevent — so fail
+          # closed instead.
+          if [ -z "$TOOLING_REF" ]; then
+            echo "::error::tooling-ref is empty. Pass the 40-hex SHA from this workflow's uses: line (with: tooling-ref: <sha>)."
+            exit 1
+          fi
+          echo "docs-gov tooling: qwts/qwts-agent-docs-gov@$TOOLING_REF"
+
+      - name: Fetch docs-gov tooling
+        if: ${{ !inputs.use-local-tooling }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: qwts/qwts-agent-docs-gov
+          ref: ${{ inputs.tooling-ref }}
+          path: .docs-gov/tooling
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Run docs-gov
+        env:
+          # Expanded via env, never inlined into the script — the ENG-0005
+          # workflow-injection lesson.
+          CONFIG: ${{ inputs.config }}
+          USE_LOCAL: ${{ inputs.use-local-tooling }}
+        run: |
+          if [ "$USE_LOCAL" = "true" ]; then
+            CLI=tools/docs-gov/docs-gov.mjs
+          else
+            CLI=.docs-gov/tooling/tools/docs-gov/docs-gov.mjs
+          fi
+          node "$CLI" --config "$CONFIG" --report docs-gov-report.json
+
+      - name: Upload drift report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: docs-gov-report
+          path: docs-gov-report.json
+          if-no-files-found: ignore

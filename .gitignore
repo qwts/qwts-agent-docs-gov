@@ -1,0 +1,6 @@
+node_modules
+.DS_Store
+# Written by `docs-gov --report` (the reusable workflow's drift record).
+docs-gov-report.json
+# Where the reusable workflow checks this tooling out inside a consumer.
+.docs-gov/
